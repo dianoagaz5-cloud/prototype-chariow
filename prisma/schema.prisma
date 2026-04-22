@@ -1,0 +1,291 @@
+// Prisma schema for Marketplace Bénin
+// SQLite doesn't support native enums — we use String with typed unions in TS.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// UserRole: "CLIENT" | "VENDEUR" | "ADMIN"
+// SellerStatus: "PENDING" | "APPROVED" | "REJECTED"
+// ListingStatus: "DRAFT" | "PENDING" | "APPROVED" | "REJECTED" | "ARCHIVED"
+// OrderStatus: "PENDING" | "PAID" | "SHIPPING" | "DELIVERED" | "CANCELLED" | "REFUNDED"
+// PaymentProvider: "MTN_MOMO" | "MOOV_MONEY" | "CELTIIS_CASH"
+// PayoutStatus: "PENDING" | "APPROVED" | "REJECTED" | "PAID"
+// ItemKind: "PRODUCT" | "SERVICE" | "EBOOK"
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  phone        String?
+  name         String
+  passwordHash String
+  role         String   @default("CLIENT")
+  city         String?
+  createdAt    DateTime @default(now())
+
+  seller             Seller?
+  orders             Order[]
+  chatThreadsAsBuyer ChatThread[] @relation("ChatThreadsAsBuyer")
+  messages           Message[]
+  reviews            Review[]
+}
+
+model Seller {
+  id          String   @id @default(cuid())
+  userId      String   @unique
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  shopName    String
+  slug        String   @unique
+  description String
+  phone       String
+  city        String
+  banner      String?
+  avatar      String?
+  status      String   @default("PENDING")
+  rating      Float    @default(0)
+  ratingCount Int      @default(0)
+  balance     Int      @default(0)
+  createdAt   DateTime @default(now())
+
+  products    Product[]
+  services    Service[]
+  ebooks      Ebook[]
+  coupons     Coupon[]
+  payouts     Payout[]
+  chatThreads ChatThread[] @relation("ChatThreadsAsSeller")
+  followers   Follow[]
+}
+
+model Category {
+  id   String @id @default(cuid())
+  name String @unique
+  slug String @unique
+  icon String
+  kind String // PRODUCT | SERVICE | EBOOK
+
+  products Product[]
+  services Service[]
+  ebooks   Ebook[]
+}
+
+model Product {
+  id           String    @id @default(cuid())
+  sellerId     String
+  seller       Seller    @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  categoryId   String
+  category     Category  @relation(fields: [categoryId], references: [id])
+  name         String
+  slug         String    @unique
+  description  String
+  price        Int
+  comparePrice Int?
+  stock        Int       @default(0)
+  images       String
+  videoUrl     String?
+  status       String    @default("PENDING")
+  featured     Boolean   @default(false)
+  flashUntil   DateTime?
+  rating       Float     @default(0)
+  ratingCount  Int       @default(0)
+  soldCount    Int       @default(0)
+  createdAt    DateTime  @default(now())
+
+  orderItems OrderItem[]
+  reviews    Review[]
+}
+
+model Service {
+  id           String   @id @default(cuid())
+  sellerId     String
+  seller       Seller   @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  categoryId   String
+  category     Category @relation(fields: [categoryId], references: [id])
+  name         String
+  slug         String   @unique
+  description  String
+  price        Int
+  negotiable   Boolean  @default(false)
+  images       String
+  videoUrl     String?
+  deliveryDays Int?
+  status       String   @default("PENDING")
+  featured     Boolean  @default(false)
+  rating       Float    @default(0)
+  ratingCount  Int      @default(0)
+  soldCount    Int      @default(0)
+  createdAt    DateTime @default(now())
+
+  orderItems OrderItem[]
+  reviews    Review[]
+}
+
+model Ebook {
+  id          String   @id @default(cuid())
+  sellerId    String
+  seller      Seller   @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  categoryId  String
+  category    Category @relation(fields: [categoryId], references: [id])
+  title       String
+  slug        String   @unique
+  description String
+  price       Int
+  cover       String
+  fileUrl     String
+  pages       Int?
+  author      String
+  previewUrl  String?
+  status      String   @default("PENDING")
+  featured    Boolean  @default(false)
+  rating      Float    @default(0)
+  ratingCount Int      @default(0)
+  soldCount   Int      @default(0)
+  createdAt   DateTime @default(now())
+
+  orderItems     OrderItem[]
+  reviews        Review[]
+  downloadTokens EbookDownloadToken[]
+}
+
+model Order {
+  id              String   @id @default(cuid())
+  number          String   @unique
+  userId          String
+  user            User     @relation(fields: [userId], references: [id])
+  status          String   @default("PENDING")
+  subtotal        Int
+  shipping        Int      @default(0)
+  commission      Int      @default(0)
+  total           Int
+  currency        String   @default("XOF")
+  paymentProvider String?
+  paymentRef      String?
+  phone           String
+  shippingCity    String
+  shippingAddress String
+  note            String?
+  createdAt       DateTime @default(now())
+
+  items     OrderItem[]
+  downloads EbookDownloadToken[]
+}
+
+model OrderItem {
+  id        String   @id @default(cuid())
+  orderId   String
+  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  kind      String
+  productId String?
+  product   Product? @relation(fields: [productId], references: [id])
+  serviceId String?
+  service   Service? @relation(fields: [serviceId], references: [id])
+  ebookId   String?
+  ebook     Ebook?   @relation(fields: [ebookId], references: [id])
+  name      String
+  image     String?
+  price     Int
+  quantity  Int      @default(1)
+  sellerId  String
+}
+
+model EbookDownloadToken {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  ebookId   String
+  ebook     Ebook    @relation(fields: [ebookId], references: [id], onDelete: Cascade)
+  orderId   String
+  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  uses      Int      @default(0)
+  maxUses   Int      @default(3)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+}
+
+model Coupon {
+  id        String    @id @default(cuid())
+  code      String    @unique
+  sellerId  String
+  seller    Seller    @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  percent   Int?
+  amount    Int?
+  maxUses   Int       @default(50)
+  uses      Int       @default(0)
+  expiresAt DateTime?
+  createdAt DateTime  @default(now())
+}
+
+model Payout {
+  id          String    @id @default(cuid())
+  sellerId    String
+  seller      Seller    @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  amount      Int
+  provider    String
+  phone       String
+  status      String    @default("PENDING")
+  note        String?
+  createdAt   DateTime  @default(now())
+  processedAt DateTime?
+}
+
+model ChatThread {
+  id        String   @id @default(cuid())
+  buyerId   String
+  buyer     User     @relation("ChatThreadsAsBuyer", fields: [buyerId], references: [id], onDelete: Cascade)
+  sellerId  String
+  seller    Seller   @relation("ChatThreadsAsSeller", fields: [sellerId], references: [id], onDelete: Cascade)
+  subject   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  messages Message[]
+
+  @@unique([buyerId, sellerId])
+}
+
+model Message {
+  id        String     @id @default(cuid())
+  threadId  String
+  thread    ChatThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  authorId  String
+  author    User       @relation(fields: [authorId], references: [id])
+  body      String
+  createdAt DateTime   @default(now())
+}
+
+model Review {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  rating    Int
+  body      String
+  productId String?
+  product   Product? @relation(fields: [productId], references: [id])
+  serviceId String?
+  service   Service? @relation(fields: [serviceId], references: [id])
+  ebookId   String?
+  ebook     Ebook?   @relation(fields: [ebookId], references: [id])
+  createdAt DateTime @default(now())
+}
+
+model Follow {
+  id        String   @id @default(cuid())
+  buyerId   String
+  sellerId  String
+  seller    Seller   @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([buyerId, sellerId])
+}
+
+model Settings {
+  id                  Int      @id @default(1)
+  siteName            String   @default("Marketplace")
+  commissionPercent   Int      @default(8)
+  minPayoutAmount     Int      @default(15000)
+  freeShippingFromXOF Int      @default(50000)
+  updatedAt           DateTime @updatedAt
+}
